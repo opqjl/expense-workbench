@@ -144,7 +144,7 @@
   .bar-bg{height:8px;background:#eef1f8;border-radius:6px;overflow:hidden;margin-bottom:8px;}
   .bar-fg{height:100%;border-radius:6px;}
   .cb-subs{display:flex;flex-direction:column;gap:5px;padding-left:4px;}
-  .cb-sub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);}
+  .cb-sub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);padding-left:16px;}
   .cb-sub .v{color:var(--ink);font-weight:600;}
   .cb-sub.member{border-left:2px solid var(--line);padding-left:8px;}
   .cb-detail{margin:3px 0;}
@@ -518,12 +518,13 @@
     Object.keys(records).forEach(k=>{ const p=parseYmd(k);
       if(p.y===viewYear && p.mIdx===viewMonth){ records[k].forEach(r=>{
         if(r.type==="expense"){ exp+=r.amount;
-          if(!month[r.cat]) month[r.cat]={amount:0, subs:{}, rows:[]};
+          if(!month[r.cat]) month[r.cat]={amount:0, subs:{}, rows:[], direct:[]};
           month[r.cat].amount+=r.amount;
           const row={date:k, rec:r};
           month[r.cat].rows.push(row);
           if(r.sub){ if(!month[r.cat].subs[r.sub]) month[r.cat].subs[r.sub]={amount:0, rows:[]};
             month[r.cat].subs[r.sub].amount+=r.amount; month[r.cat].subs[r.sub].rows.push(row); }
+          else { month[r.cat].direct.push(row); }
         } else { inc+=r.amount; if(!incMonth[r.cat]) incMonth[r.cat]={amount:0}; incMonth[r.cat].amount+=r.amount; }
       }); }
     });
@@ -559,26 +560,28 @@
         '<div class="lab">'+d+'</div>';
       barChart.appendChild(col); }
 
-    // 分类明细（含二级 + 会员费逐条）
+    // 分类明细（含二级子分类 + 叶子分类逐条）
     const blocks=document.getElementById("catBlocks");
     if(entries.length===0){ blocks.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:10px">本月暂无支出</div>'; return; }
     blocks.innerHTML="";
+    const fmtRows=(rows)=>rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(r=>'<div class="cb-row"><span>'+r.date.slice(5)+' · '+(r.rec.note||catName(r.rec.cat,r.rec.sub))+'</span><span class="v">'+fmt2(r.rec.amount)+'</span></div>').join("");
     entries.forEach(([cat,obj])=>{
       const c=CAT_MAP[cat];
       const el=document.createElement("div"); el.className="cat-block";
       let subsHtml="";
-      if(cat==="member"){
-        const rows=(obj.rows||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
-        const rowsHtml=rows.map(r=>'<div class="cb-row"><span>'+r.date.slice(5)+' · '+(r.rec.note||"会员")+'</span><span class="v">'+fmt2(r.rec.amount)+'</span></div>').join("");
-        subsHtml='<details class="cb-detail" open><summary class="cb-sub"><span>会员费逐条（'+rows.length+' 笔）</span><span class="v">'+fmt(obj.amount)+'</span></summary><div class="cb-rows">'+rowsHtml+'</div></details>';
-      } else if(Object.keys(obj.subs).length){
+      // 有子分类：逐子分类展开明细
+      if(Object.keys(obj.subs).length){
         const subs=Object.entries(obj.subs).sort((a,b)=>b[1].amount-a[1].amount);
-        subsHtml='<div class="cb-subs">'+subs.map(([s,subObj])=>{
-          const name=CAT_MAP[cat+":"+s].name;
-          const rows=(subObj.rows||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
-          const rowsHtml=rows.map(r=>'<div class="cb-row"><span>'+r.date.slice(5)+' · '+(r.rec.note||name)+'</span><span class="v">'+fmt2(r.rec.amount)+'</span></div>').join("");
-          return '<details class="cb-detail"><summary class="cb-sub"><span>'+name+'</span><span class="v">'+fmt(subObj.amount)+'</span></summary><div class="cb-rows">'+rowsHtml+'</div></details>';
+        subsHtml+='<div class="cb-subs">'+subs.map(([s,subObj])=>{
+          const name=(CAT_MAP[cat+":"+s]&&CAT_MAP[cat+":"+s].name)||s;
+          return '<details class="cb-detail" open><summary class="cb-sub"><span>'+name+'</span><span class="v">'+fmt(subObj.amount)+'</span></summary><div class="cb-rows">'+fmtRows(subObj.rows)+'</div></details>';
         }).join("")+'</div>';
+      }
+      // 直接记在父类（叶子分类 / 未选子类的记录）：逐条明细
+      if(obj.direct && obj.direct.length){
+        const title = cat==="member" ? "会员费逐条" : "逐条明细";
+        const dAmt = obj.direct.reduce((s,r)=>s+r.rec.amount,0);
+        subsHtml+='<details class="cb-detail" open><summary class="cb-sub"><span>'+title+'（'+obj.direct.length+' 笔）</span><span class="v">'+fmt(dAmt)+'</span></summary><div class="cb-rows">'+fmtRows(obj.direct)+'</div></details>';
       }
       el.innerHTML='<div class="cb-head"><div class="ico">'+c.icon+'</div><span class="nm">'+c.name+'</span>'+
         '<span class="amt">'+fmt(obj.amount)+'</span><span class="pc">'+(obj.amount/totalExp*100).toFixed(1)+'%</span></div>'+
