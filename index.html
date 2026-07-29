@@ -143,8 +143,8 @@
   .cb-head .pc{color:var(--muted);font-size:12px;margin-left:8px;}
   .bar-bg{height:8px;background:#eef1f8;border-radius:6px;overflow:hidden;margin-bottom:8px;}
   .bar-fg{height:100%;border-radius:6px;}
-  .cb-subs{display:flex;flex-direction:column;gap:5px;padding-left:4px;}
-  .cb-sub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);padding-left:16px;}
+  .cb-subs{display:flex;flex-direction:column;gap:6px;}
+  .cb-sub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);}
   .cb-sub .v{color:var(--ink);font-weight:600;}
   .cb-sub.member{border-left:2px solid var(--line);padding-left:8px;}
   .cb-detail{margin:3px 0;}
@@ -153,8 +153,9 @@
   .cb-detail>summary::before{content:"▸";display:inline-block;width:14px;color:var(--brand);font-size:10px;}
   .cb-detail[open]>summary::before{content:"▾";}
   .cb-detail>summary:hover{color:var(--ink);}
-  .cb-rows{padding:4px 0 4px 16px;display:flex;flex-direction:column;gap:4px;}
+  .cb-rows{padding:4px 0;display:flex;flex-direction:column;gap:4px;}
   .cb-row{display:flex;justify-content:space-between;font-size:12px;color:var(--ink);}
+  .cb-row span:first-child{padding-left:16px;}
   .cb-row .v{font-weight:600;color:var(--expense);}
 
   .toggle-btn{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:9px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--ink);transition:.15s;flex:none;}
@@ -327,7 +328,7 @@
     { key:"commute", name:"通勤交通", icon:"🚇", color:"#4f7cff", children:[
       {key:"subway", name:"地铁"}, {key:"taxi", name:"打车"} ]},
     { key:"food", name:"餐饮", icon:"🍚", color:"#ff7a59", children:[
-      {key:"breakfast", name:"早饭"}, {key:"lunch", name:"午饭"}, {key:"dinner", name:"晚饭"}, {key:"party", name:"聚餐"} ]},
+      {key:"party", name:"聚餐"}, {key:"breakfast", name:"早餐"}, {key:"lunch", name:"午餐"}, {key:"dinner", name:"晚餐"} ]},
     { key:"snack", name:"零食", icon:"🍪", color:"#ffb020", children:[
       {key:"bread", name:"面包"}, {key:"coffee", name:"咖啡"}, {key:"drink", name:"饮料"}, {key:"snack", name:"小吃"} ]},
     { key:"member", name:"会员费", icon:"💳", color:"#a06bff", children:null },
@@ -560,7 +561,7 @@
         '<div class="lab">'+d+'</div>';
       barChart.appendChild(col); }
 
-    // 分类明细（含二级子分类 + 叶子分类逐条）
+    // 分类明细（含二级子分类 + 叶子分类逐条；二级按定义顺序、默认折叠）
     const blocks=document.getElementById("catBlocks");
     if(entries.length===0){ blocks.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:10px">本月暂无支出</div>'; return; }
     blocks.innerHTML="";
@@ -569,22 +570,23 @@
       const c=CAT_MAP[cat];
       const el=document.createElement("div"); el.className="cat-block";
       let subsHtml="";
-      // 有子分类：逐子分类展开明细
-      if(Object.keys(obj.subs).length){
-        const subs=Object.entries(obj.subs).sort((a,b)=>b[1].amount-a[1].amount);
-        subsHtml+='<div class="cb-subs">'+subs.map(([s,subObj])=>{
-          const name=(CAT_MAP[cat+":"+s]&&CAT_MAP[cat+":"+s].name)||s;
-          return '<details class="cb-detail" open><summary class="cb-sub"><span>'+name+'</span><span class="v">'+fmt(subObj.amount)+'</span></summary><div class="cb-rows">'+fmtRows(subObj.rows)+'</div></details>';
+      // 有子分类：按分类树定义顺序展示（默认折叠）
+      const defCat=CAT_TREE.find(x=>x.key===cat);
+      if(defCat && defCat.children && defCat.children.length && Object.keys(obj.subs).length){
+        subsHtml+='<div class="cb-subs">'+defCat.children.filter(s=>obj.subs[s.key]).map(s=>{
+          const subObj=obj.subs[s.key];
+          const name=(CAT_MAP[cat+":"+s.key]&&CAT_MAP[cat+":"+s.key].name)||s.name;
+          return '<details class="cb-detail"><summary class="cb-sub"><span>'+name+'</span><span class="v">'+fmt(subObj.amount)+'</span></summary><div class="cb-rows">'+fmtRows(subObj.rows)+'</div></details>';
         }).join("")+'</div>';
       }
-      // 直接记在父类（叶子分类 / 未选子类的记录）：逐条明细
+      // 直接记在父类（叶子分类 / 未选子类的记录）：逐条明细（默认折叠）
       if(obj.direct && obj.direct.length){
         const title = cat==="member" ? "会员费逐条" : "逐条明细";
         const dAmt = obj.direct.reduce((s,r)=>s+r.rec.amount,0);
-        subsHtml+='<details class="cb-detail" open><summary class="cb-sub"><span>'+title+'（'+obj.direct.length+' 笔）</span><span class="v">'+fmt(dAmt)+'</span></summary><div class="cb-rows">'+fmtRows(obj.direct)+'</div></details>';
+        subsHtml+='<details class="cb-detail"><summary class="cb-sub"><span>'+title+'（'+obj.direct.length+' 笔）</span><span class="v">'+fmt(dAmt)+'</span></summary><div class="cb-rows">'+fmtRows(obj.direct)+'</div></details>';
       }
       el.innerHTML='<div class="cb-head"><div class="ico">'+c.icon+'</div><span class="nm">'+c.name+'</span>'+
-        '<span class="amt">'+fmt(obj.amount)+'</span><span class="pc">'+(obj.amount/totalExp*100).toFixed(1)+'%</span></div>'+
+        '<span class="pc">'+(obj.amount/totalExp*100).toFixed(1)+'%</span><span class="amt">'+fmt(obj.amount)+'</span></div>'+
         '<div class="bar-bg"><div class="bar-fg" style="width:'+(obj.amount/totalExp*100).toFixed(1)+'%;background:'+c.color+'"></div></div>'+subsHtml;
       blocks.appendChild(el);
     });
