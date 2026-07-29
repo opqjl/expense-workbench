@@ -2,39 +2,67 @@ const CACHE_NAME = 'expense-workbench-v1';
 
 function isAppPage(text){ return text.includes('id="dayModal"'); }
 
+// 预缓存的同源静态资源（相对路径，兼容 GitHub Pages 子目录）
+const PRECACHE = ['manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'sw.js'];
+
 self.addEventListener('install', e => { self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
 
 function notifyCached(){ self.clients.matchAll().then(cls => cls.forEach(c => { try{ c.postMessage({type:'cached'}); }catch(_){} })); }
 
-// 主页面会发消息过来，让 SW 缓存当前页面的真实 URL（含沙箱查询参数）
+// 主页面发来 cache-page，让 SW 缓存当前真实 URL + 预缓存静态资源
 self.addEventListener('message', e => {
   if(e.data && e.data.type === 'cache-page' && e.data.url){
-    const url = e.data.url;
-    caches.open(CACHE_NAME).then(c => c.match(url).then(hit => {
-      if(hit){ notifyCached(); return; }
-      return fetch(url).then(resp => {
-        if(!resp.ok) return;
-        return resp.clone().text().then(text => { if(isAppPage(text)){ c.put(url, resp); notifyCached(); } });
-      }).catch(()=>{});
-    }));
+    const base = new URL(e.data.url);
+    const targets = [e.data.url].concat(PRECACHE.map(p => new URL(p, base.href).href));
+    caches.open(CACHE_NAME).then(async c => {
+      let cachedAny = false;
+      for (const u of targets) {
+        const hit = await c.match(u, {ignoreVary:true});
+        if (hit) { cachedAny = true; continue; }
+        try {
+          const resp = await fetch(u);
+          if (resp.ok) {
+            const ct = resp.headers.get('content-type') || '';
+            if (ct.includes('text/html')) {
+              const text = await resp.clone().text();
+              if (isAppPage(text)) { await c.put(u, resp.clone()); cachedAny = true; }
+            } else if (ct.includes('image/') || ct.includes('manifest') || ct.includes('javascript')) {
+              await c.put(u, resp.clone()); cachedAny = true;
+            }
+          }
+        } catch(_) {}
+      }
+      if (cachedAny) notifyCached();
+    });
   }
 });
 
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      return fetch(e.request).then(resp => {
-        if(!resp.ok || !(resp.headers.get('content-type')||'').includes('text/html')) return resp;
-        return resp.clone().text().then(text => {
-          if(isAppPage(text)){
-            caches.open(CACHE_NAME).then(c => c.put(e.request, resp.clone()).then(notifyCached));
-            return resp;
-          }
-          // 沙箱休眠时代理可能返回一个非 App 的 HTML 提示页，此时优先用缓存
-          return cached || resp;
-        });
-      }).catch(err => cached || new Response('记账工作台需要至少成功打开一次以完成离线缓存。', {status:503, headers:{'Content-Type':'text/plain;charset=utf-8'}}));
-    })
-  );
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // 不拦截跨域请求
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const hit = await cache.match(req, {ignoreVary:true});
+    if (hit) return hit; // 优先用缓存（离线关键）
+    try {
+      const resp = await fetch(req);
+      if (resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('text/html')) {
+          const text = await resp.clone().text();
+          if (isAppPage(text)) { await cache.put(req, resp.clone()); notifyCached(); }
+        } else if (ct.includes('image/') || ct.includes('manifest') || ct.includes('javascript')) {
+          await cache.put(req, resp.clone());
+        }
+      }
+      return resp;
+    } catch (err) {
+      const c2 = await cache.match(req, {ignoreVary:true});
+      if (c2) return c2;
+      throw err;
+    }
+  })());
 });
