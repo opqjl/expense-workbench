@@ -819,8 +819,11 @@
   })();
 
   // 注册 Service Worker：让「添加到主屏幕」在沙箱休眠后仍能从本地缓存打开
-  // 访问时带 ?nosw=1 可跳过 SW 注册（直连加载，用于排查 SW 卡死 / 清缓存后打不开）
-  if('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.search.includes('nosw')){
+  // 访问时带 ?nosw=1 可跳过 SW 并注销已存在的 SW（直连加载，用于排查 SW 卡死 / 清缓存后打不开）
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    if(location.search.includes('nosw')){
+      navigator.serviceWorker.getRegistrations().then(rs => { if(rs.length){ rs.forEach(r=>r.unregister()); location.reload(); } });
+    } else {
     const offlineReady = document.getElementById("offlineReady");
     function showOfflineReady(){ if(offlineReady) offlineReady.style.display="inline-block"; }
     if(navigator.serviceWorker.controller) showOfflineReady();
@@ -842,7 +845,7 @@
         }
       })
       .catch(() => {});
-  }
+  }}
 })();
 </script>
 </body>
