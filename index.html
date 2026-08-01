@@ -317,7 +317,7 @@
     </div>
   </div>
 
-  <div class="footer-note">数据保存在本机浏览器（localStorage），不上传任何服务器 · 已内置你 7 月的真实账单，建议定期「导出」备份 <span class="offline-badge" id="offlineReady">📦 已开启离线打开</span></div>
+  <div class="footer-note">数据保存在本机浏览器（localStorage），不上传任何服务器 · 建议定期「导出」备份 · 若页面打不开，在网址后加 <code>?nosw=1</code> 重新打开即可恢复</div>
 </div>
   <div class="toast" id="toast"></div>
 
@@ -818,34 +818,18 @@
     renderAll();
   })();
 
-  // 注册 Service Worker：让「添加到主屏幕」在沙箱休眠后仍能从本地缓存打开
-  // 访问时带 ?nosw=1 可跳过 SW 并注销已存在的 SW（直连加载，用于排查 SW 卡死 / 清缓存后打不开）
+  // 说明：默认【不注册】Service Worker。此前 SW 在部分浏览器（尤其 iOS Safari）卡死后
+  // 会拦截页面导致整站打不开，且 iOS 清「网站数据」经常清不掉它。离线使用请走页面内
+  // 自带的「📱 下载离线版 / 📋 复制离线链接」（生成自包含 HTML，无需 SW）。
+  // 若此前已被卡死的 SW 拦住，访问本页地址后加 ?nosw=1 可一键注销 SW 并清理缓存。
   if('serviceWorker' in navigator && location.protocol.startsWith('http')){
     if(location.search.includes('nosw')){
-      navigator.serviceWorker.getRegistrations().then(rs => { if(rs.length){ rs.forEach(r=>r.unregister()); location.reload(); } });
-    } else {
-    const offlineReady = document.getElementById("offlineReady");
-    function showOfflineReady(){ if(offlineReady) offlineReady.style.display="inline-block"; }
-    if(navigator.serviceWorker.controller) showOfflineReady();
-    let _swReloaded = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      showOfflineReady();
-      // 检测到新版本 Service Worker 接管时，自动刷新一次以加载最新页面
-      if(!_swReloaded){ _swReloaded = true; location.reload(); }
-    });
-    navigator.serviceWorker.addEventListener("message", e => {
-      if(e.data && e.data.type==="cached"){ showOfflineReady(); toast("✅ 已开启离线打开，主屏幕图标可离线使用"); }
-    });
-    navigator.serviceWorker.register('sw.js')
-      .then(reg => {
-        const msg = {type:'cache-page', url:location.href};
-        if(reg.active){ reg.active.postMessage(msg); }
-        else if(reg.installing){
-          reg.installing.addEventListener('statechange', function(){ if(this.state==='activated') this.postMessage(msg); });
-        }
-      })
-      .catch(() => {});
-  }}
+      Promise.all([
+        navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r=>r.unregister()))),
+        (typeof caches!=='undefined' ? caches.keys().then(ks => Promise.all(ks.map(k=>caches.delete(k)))) : Promise.resolve())
+      ]).then(()=>{ location.href = location.pathname + location.hash; }).catch(()=>{ location.href = location.pathname + location.hash; });
+    }
+  }
 })();
 </script>
 </body>
