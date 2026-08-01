@@ -97,6 +97,10 @@
     display:flex;align-items:center;gap:5px;transition:.13s;}
   .cat .e{font-size:15px;}
   .cat.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand);font-weight:600;}
+  .cat.add{border-style:dashed;color:var(--muted);}
+  .cat.add:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft);}
+  .cat .x{margin-left:1px;margin-right:-5px;width:17px;height:17px;display:grid;place-items:center;border-radius:50%;font-size:13px;color:var(--muted);}
+  .cat .x:hover{background:var(--expense-soft);color:var(--expense);}
   .field{display:flex;gap:9px;margin-bottom:11px;}
   .field input{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:15px;outline:none;background:#fafbff;transition:.15s;width:100%;}
   .field input:focus{border-color:var(--brand);background:#fff;}
@@ -254,6 +258,9 @@
         <div class="cats" id="catBox"></div>
         <div class="form-label" id="subLabel" style="display:none">② 选择细分（可选）</div>
         <div class="cats" id="subBox" style="display:none"></div>
+        <div class="form-label" id="payLabel">③ 支付方式</div>
+        <div class="cats" id="payAppBox"></div>
+        <div class="cats" id="payMethodBox"></div>
         <div class="field">
           <input type="number" id="amtInput" placeholder="金额（元）" inputmode="decimal" step="0.01" min="0" />
           <input type="text" id="noteInput" class="note" placeholder="备注（选填，如：烧烤/老乡鸡会员）" maxlength="40" />
@@ -264,6 +271,18 @@
         </div>
         <button class="add-btn" id="addBtn">＋ 添加记录</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="catModal">
+    <div class="modal-card">
+      <div class="modal-head"><b>新增大类</b><button class="modal-close" id="catModalClose">✕</button></div>
+      <div class="field"><input type="text" id="catNameInput" placeholder="大类名称，如：宠物 / 兴趣 / 房租" maxlength="10" /></div>
+      <div class="form-label">选择图标</div>
+      <div class="cats" id="catIconBox" style="margin-bottom:10px"></div>
+      <div class="form-label">选择颜色</div>
+      <div class="cats" id="catColorBox" style="margin-bottom:14px"></div>
+      <button class="add-btn" id="catSaveBtn">保存大类</button>
     </div>
   </div>
 
@@ -346,6 +365,28 @@
     { key:"invest", name:"理财", icon:"📈", children:null },
     { key:"other_i", name:"其他", icon:"✨", children:null }
   ];
+
+  // ---------- 支付方式（App + 具体方式）----------
+  const PAY_TREE = [
+    {key:"wechat", name:"微信", icon:"💬", methods:[{key:"change",name:"零钱"},{key:"tong",name:"零钱通"},{key:"wcard",name:"银行卡"}]},
+    {key:"alipay", name:"支付宝", icon:"🔵", methods:[{key:"balance",name:"余额"},{key:"yeb",name:"余额宝"},{key:"huabei",name:"花呗"},{key:"acard",name:"银行卡"}]},
+    {key:"bank", name:"银行卡", icon:"🏦", methods:[{key:"debit",name:"储蓄卡"},{key:"credit",name:"信用卡"}]},
+    {key:"cash", name:"现金", icon:"💵", methods:[{key:"cash",name:"现金"}]},
+    {key:"other_p", name:"其他", icon:"📦", methods:[{key:"other",name:"其他"}]}
+  ];
+  const PAY_MAP = {};
+  PAY_TREE.forEach(a=>{ PAY_MAP[a.key]={name:a.name,icon:a.icon}; a.methods.forEach(m=> PAY_MAP[a.key+":"+m.key]={name:m.name}); });
+  function payLabel(app, method){ if(!app||!PAY_MAP[app]) return ""; const m = method?PAY_MAP[app+":"+method]:null; return PAY_MAP[app].icon+" "+PAY_MAP[app].name+(m?("·"+m.name):""); }
+
+  // ---------- 自定义大类（手动增删，存 localStorage）----------
+  const ICONS = ["💡","🛒","🐱","🐶","🍼","🎁","🏠","🚗","✈️","📚","💊","🎮","👕","🍷","⛽","🎓","🧸","🌟"];
+  const COLORS = ["#4f7cff","#ff7a59","#ffb020","#a06bff","#16c79a","#36cfc9","#ff5d6c","#ff6ba6","#8a93a6"];
+  const CUSTOM_KEY = 'custom_cats_v1';
+  let customCats = loadCustom();
+  function loadCustom(){ try{ const v=JSON.parse(lsGet(CUSTOM_KEY)); if(v && Array.isArray(v.expense)) return v; }catch(e){} return {expense:[], income:[]}; }
+  function saveCustom(){ lsSet(CUSTOM_KEY, JSON.stringify(customCats)); }
+  buildMap(customCats.expense); buildMap(customCats.income);
+  function rebuildMap(){ for(const k in CAT_MAP) delete CAT_MAP[k]; buildMap(CAT_TREE); buildMap(INCOME_TREE); buildMap(customCats.expense); buildMap(customCats.income); }
   const CAT_MAP = {};
   function buildMap(tree){ tree.forEach(c=>{
     CAT_MAP[c.key] = {name:c.name, color:c.color, cat:c.key, sub:null, icon:c.icon};
@@ -354,7 +395,7 @@
     });
   });}
   buildMap(CAT_TREE); buildMap(INCOME_TREE);
-  function topCats(type){ return type==="income"?INCOME_TREE:CAT_TREE; }
+  function topCats(type){ return (type==="income"?INCOME_TREE:CAT_TREE).concat(customCats[type]); }
   function catName(cat, sub){ return sub ? CAT_MAP[cat+":"+sub].name : (CAT_MAP[cat]?CAT_MAP[cat].name:cat); }
   function catColor(cat, sub){ return (sub && CAT_MAP[cat+":"+sub]) ? CAT_MAP[cat+":"+sub].color : (CAT_MAP[cat]?CAT_MAP[cat].color:"#8a93a6"); }
 
@@ -364,6 +405,7 @@
   // ---------- 状态 ----------
   let records, viewYear, viewMonth, selectedDate;
   let formType = "expense", formCat = CAT_TREE[0].key, formSub = null, editingId = null;
+  let formPayApp = "wechat", formPayMethod = "change";
 
   // ---------- 工具 ----------
   function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
@@ -429,7 +471,7 @@
       const sign=r.type==="expense"?"-":"+"; const cls=r.type==="expense"?"exp":"inc";
       el.innerHTML='<div class="ico">'+c.icon+'</div>'+
         '<div class="info"><div class="c">'+name+'</div>'+
-        '<div class="n">'+(r.note||"")+(r.time?" · "+r.time.slice(11,16):"")+'</div></div>'+
+        '<div class="n">'+(r.note||"")+(r.time?" · "+r.time.slice(11,16):"")+(payLabel(r.payApp,r.payMethod)?" · "+payLabel(r.payApp,r.payMethod):"")+'</div></div>'+
         '<div class="amt '+cls+'">'+sign+fmt2(r.amount)+'</div>'+
         '<button class="del" title="删除">🗑</button>';
       el.querySelector(".del").onclick=()=>deleteRec(selectedDate, r.id, name, r.amount);
@@ -443,15 +485,23 @@
   function renderCats(){
     const box=document.getElementById("catBox"); box.innerHTML="";
     topCats(formType).forEach(c=>{
+      const isCustom = customCats[formType].some(x=>x.key===c.key);
       const el=document.createElement("div"); el.className="cat"+(c.key===formCat?" on":"");
-      el.innerHTML='<span class="e">'+c.icon+'</span>'+c.name;
-      el.onclick=()=>{ formCat=c.key; const ch=c.children;
+      el.innerHTML='<span class="e">'+c.icon+'</span>'+c.name+(isCustom?'<span class="x" title="删除该大类">×</span>':'');
+      if(isCustom){ const x=el.querySelector(".x"); if(x) x.onclick=(e)=>{ e.stopPropagation(); delCat(c); }; }
+      el.onclick=(ev)=>{ if(ev.target.classList.contains("x")) return;
+        formCat=c.key; const ch=c.children;
         if(ch&&ch.length){ formSub=ch[0].key; document.getElementById("subBox").style.display="flex"; document.getElementById("subLabel").style.display="block"; }
         else { formSub=null; document.getElementById("subBox").style.display="none"; document.getElementById("subLabel").style.display="none"; }
         renderCats(); renderSubs();
       };
       box.appendChild(el);
     });
+    // 新增大类按钮
+    const add=document.createElement("div"); add.className="cat add";
+    add.innerHTML='<span class="e">＋</span>新增大类';
+    add.onclick=()=>openCatModal(formType);
+    box.appendChild(add);
   }
   function renderSubs(){
     const box=document.getElementById("subBox"); box.innerHTML="";
@@ -460,22 +510,77 @@
     ch.forEach(s=>{ const el=document.createElement("div"); el.className="cat"+(s.key===formSub?" on":"");
       el.textContent=s.name; el.onclick=()=>{ formSub=s.key; renderSubs(); }; box.appendChild(el); });
   }
+  function renderPayApps(){
+    const box=document.getElementById("payAppBox"); box.innerHTML="";
+    PAY_TREE.forEach(a=>{ const el=document.createElement("div"); el.className="cat"+(a.key===formPayApp?" on":"");
+      el.innerHTML='<span class="e">'+a.icon+'</span>'+a.name;
+      el.onclick=()=>{ formPayApp=a.key; const m=a.methods&&a.methods[0]; formPayMethod=m?m.key:null; renderPayApps(); renderPayMethods(); };
+      box.appendChild(el); });
+  }
+  function renderPayMethods(){
+    const box=document.getElementById("payMethodBox"); box.innerHTML="";
+    const app=PAY_TREE.find(a=>a.key===formPayApp); if(!app||!app.methods) return;
+    app.methods.forEach(m=>{ const el=document.createElement("div"); el.className="cat"+(m.key===formPayMethod?" on":"");
+      el.textContent=m.name; el.onclick=()=>{ formPayMethod=m.key; renderPayMethods(); }; box.appendChild(el); });
+  }
   function renderSeg(){ document.querySelectorAll("#segType button").forEach(b=> b.classList.toggle("on", b.dataset.type===formType)); }
+
+  // ---------- 新增大类弹窗 ----------
+  let modalType="expense", newIcon=ICONS[0], newColor=COLORS[0];
+  function openCatModal(type){
+    modalType=type; newIcon=ICONS[0]; newColor=COLORS[0];
+    document.getElementById("catNameInput").value="";
+    renderCatIconPick(); renderCatColorPick();
+    document.getElementById("catModal").style.display="flex";
+  }
+  function renderCatIconPick(){
+    const box=document.getElementById("catIconBox"); box.innerHTML="";
+    ICONS.forEach(ic=>{ const el=document.createElement("div"); el.className="cat"+(ic===newIcon?" on":"");
+      el.textContent=ic; el.onclick=()=>{ newIcon=ic; renderCatIconPick(); }; box.appendChild(el); });
+  }
+  function renderCatColorPick(){
+    const box=document.getElementById("catColorBox"); box.innerHTML="";
+    COLORS.forEach(co=>{ const el=document.createElement("div"); el.className="cat"+(co===newColor?" on":"");
+      el.style.background=co; el.style.width="30px"; el.style.height="30px"; el.style.padding="0"; el.style.borderRadius="9px"; el.style.cursor="pointer";
+      el.onclick=()=>{ newColor=co; renderCatColorPick(); }; box.appendChild(el); });
+  }
+  function delCat(c){
+    if(!confirm("删除大类「"+c.name+"」？\n该大类下已有的记录会自动移到「其他」，不会丢失。")) return;
+    const def = formType==="income" ? "other_i" : "other";
+    Object.keys(records).forEach(k=> (records[k]||[]).forEach(r=>{ if(r.cat===c.key) r.cat=def; }));
+    customCats[formType] = customCats[formType].filter(x=>x.key!==c.key);
+    saveCustom(); save(); rebuildMap();
+    if(formCat===c.key) formCat = (formType==="income"?INCOME_TREE[0].key:CAT_TREE[0].key);
+    renderAll(); toast("已删除大类："+c.name);
+  }
+  document.getElementById("catSaveBtn").onclick=()=>{
+    const name=document.getElementById("catNameInput").value.trim();
+    if(!name){ toast("请输入大类名称"); return; }
+    const key="cus_"+modalType+"_"+Date.now().toString(36);
+    const item={key, name, icon:newIcon, color:newColor, children:null};
+    customCats[modalType].push(item); buildMap([item]); saveCustom();
+    document.getElementById("catModal").style.display="none";
+    renderCats(); toast("已添加大类："+name);
+  };
+  document.getElementById("catModalClose").onclick=()=> document.getElementById("catModal").style.display="none";
+  document.getElementById("catModal").addEventListener("click", e=>{ if(e.target.id==="catModal") document.getElementById("catModal").style.display="none"; });
 
   function startEdit(r){
     editingId=r.id; formType=r.type; formCat=r.cat; formSub=r.sub||null;
+    formPayApp=r.payApp||"wechat"; formPayMethod=(r.payApp&&r.payMethod)?r.payMethod:(PAY_TREE.find(a=>a.key===formPayApp).methods[0].key);
     document.getElementById("amtInput").value=r.amount;
     document.getElementById("noteInput").value=r.note||"";
     document.getElementById("editTag").style.display="flex";
     document.getElementById("addBtn").textContent="💾 保存修改";
     document.querySelectorAll("#segType button").forEach(b=> b.classList.toggle("on", b.dataset.type===formType));
-    renderCats(); renderSubs();
+    renderCats(); renderSubs(); renderPayApps(); renderPayMethods();
   }
   function cancelEdit(){
     editingId=null; formType="expense"; formCat=CAT_TREE[0].key; formSub=null;
+    formPayApp="wechat"; formPayMethod="change";
     document.getElementById("amtInput").value=""; document.getElementById("noteInput").value="";
     document.getElementById("editTag").style.display="none"; document.getElementById("addBtn").textContent="＋ 添加记录";
-    renderSeg(); renderCats(); renderSubs();
+    renderSeg(); renderCats(); renderSubs(); renderPayApps(); renderPayMethods();
   }
   function submit(){
     const amt=parseFloat(document.getElementById("amtInput").value);
@@ -484,11 +589,11 @@
     if(!records[selectedDate]) records[selectedDate]=[];
     if(editingId){
       const rec=records[selectedDate].find(x=>x.id===editingId);
-      if(rec){ rec.type=formType; rec.cat=formCat; rec.sub=formSub; rec.amount=amt; rec.note=note; }
+      if(rec){ rec.type=formType; rec.cat=formCat; rec.sub=formSub; rec.amount=amt; rec.note=note; rec.payApp=formPayApp; rec.payMethod=formPayMethod; }
       cancelEdit(); toast("已保存修改");
     }else{
       records[selectedDate].push({ id:Date.now()+"_"+Math.random().toString(36).slice(2,7),
-        type:formType, cat:formCat, sub:formSub, amount:amt, note:note, time:new Date().toISOString() });
+        type:formType, cat:formCat, sub:formSub, amount:amt, note:note, payApp:formPayApp, payMethod:formPayMethod, time:new Date().toISOString() });
       document.getElementById("amtInput").value=""; document.getElementById("noteInput").value="";
       toast(formType==="expense"?"已记一笔支出":"已记一笔收入");
     }
@@ -565,7 +670,7 @@
     const blocks=document.getElementById("catBlocks");
     if(entries.length===0){ blocks.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:10px">本月暂无支出</div>'; return; }
     blocks.innerHTML="";
-    const fmtRows=(rows)=>rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(r=>'<div class="cb-row"><span>'+r.date.slice(5)+' · '+(r.rec.note||catName(r.rec.cat,r.rec.sub))+'</span><span class="v">'+fmt2(r.rec.amount)+'</span></div>').join("");
+    const fmtRows=(rows)=>rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(r=>'<div class="cb-row"><span>'+r.date.slice(5)+' · '+(r.rec.note||catName(r.rec.cat,r.rec.sub))+(payLabel(r.rec.payApp,r.rec.payMethod)?' · '+payLabel(r.rec.payApp,r.rec.payMethod):'')+'</span><span class="v">'+fmt2(r.rec.amount)+'</span></div>').join("");
     entries.forEach(([cat,obj])=>{
       const c=CAT_MAP[cat];
       const el=document.createElement("div"); el.className="cat-block";
@@ -592,7 +697,7 @@
     });
   }
 
-  function renderAll(){ renderCalendar(); renderDayDetail(); renderSeg(); renderCats(); renderSubs(); renderSummary(); }
+  function renderAll(){ renderCalendar(); renderDayDetail(); renderSeg(); renderCats(); renderSubs(); renderPayApps(); renderPayMethods(); renderSummary(); }
 
   // ---------- 交互 ----------
   document.getElementById("prevM").onclick=()=>{ viewMonth--; if(viewMonth<0){viewMonth=11;viewYear--;} renderAll(); };
@@ -679,7 +784,7 @@
       const sign=r.type==="expense"?"-":"+"; const cls=r.type==="expense"?"exp":"inc";
       el.innerHTML='<div class="ico">'+c.icon+'</div>'+
         '<div class="info"><div class="c">'+name+'</div>'+
-        '<div class="n">'+(r.note||"")+(r.time?" · "+r.time.slice(11,16):"")+'</div></div>'+
+        '<div class="n">'+(r.note||"")+(r.time?" · "+r.time.slice(11,16):"")+(payLabel(r.payApp,r.payMethod)?" · "+payLabel(r.payApp,r.payMethod):"")+'</div></div>'+
         '<div class="amt '+cls+'">'+sign+fmt2(r.amount)+'</div>'+
         '<button class="del" title="删除">🗑</button>';
       el.querySelector(".del").onclick=()=>deleteRec(dateStr, r.id, name, r.amount);
@@ -718,7 +823,12 @@
     const offlineReady = document.getElementById("offlineReady");
     function showOfflineReady(){ if(offlineReady) offlineReady.style.display="inline-block"; }
     if(navigator.serviceWorker.controller) showOfflineReady();
-    navigator.serviceWorker.addEventListener("controllerchange", showOfflineReady);
+    let _swReloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      showOfflineReady();
+      // 检测到新版本 Service Worker 接管时，自动刷新一次以加载最新页面
+      if(!_swReloaded){ _swReloaded = true; location.reload(); }
+    });
     navigator.serviceWorker.addEventListener("message", e => {
       if(e.data && e.data.type==="cached"){ showOfflineReady(); toast("✅ 已开启离线打开，主屏幕图标可离线使用"); }
     });
